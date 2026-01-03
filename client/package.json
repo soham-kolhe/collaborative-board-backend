@@ -1,5 +1,5 @@
 {
-  "name": "collaborative-whiteboard",
+  "name": "client",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -10,11 +10,12 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@tailwindcss/vite": "^4.1.17",
-    "lucide-react": "^0.561.0",
+    "@tailwindcss/vite": "^4.1.18",
+    "lucide-react": "^0.562.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "tailwindcss": "^4.1.17"
+    "socket.io-client": "^4.8.3",
+    "tailwindcss": "^4.1.18"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
