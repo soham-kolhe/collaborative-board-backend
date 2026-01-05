@@ -1,3 +1,4 @@
+const users = {};
 import express from "express";
 import { createServer } from "http";
 import { Server } from "socket.io";
@@ -20,24 +21,45 @@ const io = new Server(server, {
 });
 
 io.on("connection", (socket) => {
-  console.log("Connected:", socket.id);
-
-  socket.on("join-room", (roomId) => {
+  socket.on("join-room", ({ userName, roomId }) => {
     socket.join(roomId);
-    console.log(`Socket ${socket.id} joined room ${roomId}`);
+    users[socket.id] = { userName, roomId };
+
+    // Get all users in the specific room
+    const roomUsers = Object.values(users)
+      .filter((u) => u.roomId === roomId)
+      .map((u) => u.userName);
+
+    // Tell everyone in the room (including the joiner) the new user list
+    io.to(roomId).emit("user_list", roomUsers);
   });
 
-  socket.on("draw", (data) => {
-    // broadcast logic: roomId ke baki sabko data bhej do
-    socket.to(data.roomId).emit("draw", data);
+  socket.on("disconnect", () => {
+    const user = users[socket.id];
+    if (user) {
+      const { roomId } = user;
+      delete users[socket.id];
+
+      const remainingUsers = Object.values(users)
+        .filter((u) => u.roomId === roomId)
+        .map((u) => u.userName);
+
+      io.to(roomId).emit("user_list", remainingUsers);
+    }
   });
 
-  socket.on("draw_shape", (data) => {
-    socket.to(data.roomId).emit("draw_shape", data);
-  });
+  // Ensure these broadcast events include the sender's data for OTHERS
+  socket.on("draw", (data) => socket.to(data.roomId).emit("draw", data));
+  socket.on("draw_shape", (data) =>
+    socket.to(data.roomId).emit("draw_shape", data)
+  );
 
   socket.on("draw_text", (data) => {
     socket.to(data.roomId).emit("draw_text", data);
+  });
+
+  socket.on("clear_canvas", (data) => {
+    socket.to(data.roomId).emit("clear_canvas");
   });
 });
 

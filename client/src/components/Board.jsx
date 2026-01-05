@@ -1,6 +1,14 @@
 import { useState, useEffect, useRef } from "react";
 
-const Board = ({ canvasRef, tool, color, lineWidth, socket }) => {
+const Board = ({
+  canvasRef,
+  tool,
+  color,
+  lineWidth,
+  socket,
+  roomId,
+  userName,
+}) => {
   const [isDrawing, setIsDrawing] = useState(false);
   const [startPos, setStartPos] = useState({ x: 0, y: 0 });
   const [snapshot, setSnapshot] = useState(null);
@@ -10,88 +18,84 @@ const Board = ({ canvasRef, tool, color, lineWidth, socket }) => {
     y: 0,
     text: "",
   });
+  const [currentPos, setCurrentPos] = useState({ x: 0, y: 0 });
+  const [usersInRoom, setUsersInRoom] = useState([]);
 
   const textAreaRef = useRef(null);
 
   useEffect(() => {
-  const canvas = canvasRef.current;
-  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
 
-  // Set size once without using State
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
+    // Set size once without using State
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
 
-  ctx.fillStyle = "white";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.lineCap = "round";
-  ctx.lineJoin = "round";
-  
-  // Do NOT add 'tool' or 'lineWidth' to this dependency array
-}, [canvasRef]);
+    ctx.fillStyle = "white";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
 
-  // useEffect(() => {
-  //   const canvas = canvasRef.current;
-  //   const ctx = canvas.getContext("2d");
+    // Do NOT add 'tool' or 'lineWidth' to this dependency array
+  }, [canvasRef]);
 
-  //   // Dimensions ko direct set karein, state mein save na karein
-  //   canvas.width = window.innerWidth;
-  //   canvas.height = window.innerHeight;
+  const drawActualShape = (ctx, tool, start, end) => {
+    if (tool === "rect") {
+      ctx.strokeRect(start.x, start.y, end.x - start.x, end.y - start.y);
+    } else if (tool === "ellipse") {
+      const rx = Math.abs(end.x - start.x);
+      const ry = Math.abs(end.y - start.y);
+      ctx.beginPath();
+      ctx.ellipse(start.x, start.y, rx, ry, 0, 0, 2 * Math.PI);
+      ctx.stroke();
+    }
+  };
 
-  //   ctx.fillStyle = "white";
-  //   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  //   ctx.lineCap = "round";
-  //   ctx.lineJoin = "round";
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d");
 
-  //   // Agar resize handle karna hai toh aise karein bina warning ke
-  //   const handleResize = () => {
-  //     const tempImage = canvas.toDataURL();
-  //     canvas.width = window.innerWidth;
-  //     canvas.height = window.innerHeight;
-  //     ctx.fillStyle = "white";
-  //     ctx.fillRect(0, 0, canvas.width, canvas.height);
-  //     ctx.lineCap = "round";
-  //     ctx.lineJoin = "round";
-  //     const img = new Image();
-  //     img.src = tempImage;
-  //     img.onload = () => ctx.drawImage(img, 0, 0);
-  //   };
+    socket.on("user_list", (list) => setUsersInRoom(list));
 
-  //   window.addEventListener("resize", handleResize);
-  //   return () => window.removeEventListener("resize", handleResize);
-  // }, [canvasRef]);
+    socket.on("draw", (data) => {
+      const { x, y, prevX, prevY, tool, color, lineWidth } = data;
+      ctx.beginPath();
+      ctx.lineWidth = lineWidth;
+      ctx.lineCap = "round";
+      ctx.strokeStyle = tool === "eraser" ? "white" : color;
+      ctx.moveTo(prevX, prevY);
+      ctx.lineTo(x, y);
+      ctx.stroke();
+    });
 
-  // useEffect(() => {
-  //   const canvas = canvasRef.current;
-  //   const ctx = canvas.getContext("2d");
+    socket.on("draw_shape", (data) => {
+      const { startPos, endPos, tool, color, lineWidth } = data;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = lineWidth;
+      drawActualShape(ctx, tool, startPos, endPos);
+    });
 
-  //   socket.on("draw", (data) => {
-  //     // We must deconstruct every property to mirror the sender's brush
-  //     const { x, y, prevX, prevY, tool, color, lineWidth } = data;
+    socket.on("draw_text", (data) => {
+      const { text, x, y, color, lineWidth } = data;
+      ctx.font = `${lineWidth * 2}px Arial`;
+      ctx.fillStyle = color;
+      ctx.textBaseline = "top";
+      ctx.fillText(text, x, y);
+    });
 
-  //     ctx.beginPath();
-  //     ctx.lineWidth = lineWidth;
-  //     ctx.lineCap = "round";
-  //     ctx.lineJoin = "round";
+    socket.on("clear_canvas", () => {
+      ctx.fillStyle = "white";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    });
 
-  //     if (tool === "eraser") {
-  //       ctx.globalCompositeOperation = "destination-out"; // True erasing
-  //       // If using the white-background hack: ctx.strokeStyle = 'white';
-  //     } else {
-  //       ctx.globalCompositeOperation = "source-over";
-  //       ctx.strokeStyle = color;
-  //     }
-
-  //     ctx.moveTo(prevX, prevY);
-  //     ctx.lineTo(x, y);
-  //     ctx.stroke();
-  //     ctx.closePath();
-
-  //     // Reset to default for the local user
-  //     ctx.globalCompositeOperation = "source-over";
-  //   });
-
-  //   return () => socket.off("draw");
-  // }, [canvasRef, socket]);
+    return () => {
+      socket.off("user_list");
+      socket.off("draw");
+      socket.off("draw_shape");
+      socket.off("draw_text");
+      socket.off("clear_canvas");
+    };
+  }, [socket, canvasRef]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -117,38 +121,28 @@ const Board = ({ canvasRef, tool, color, lineWidth, socket }) => {
     const y = e.clientY - rect.top;
     const ctx = canvasRef.current.getContext("2d");
 
+    const newPos = { x, y };
+    setCurrentPos(newPos);
+
     if (tool === "rect" || tool === "ellipse") {
-      ctx.putImageData(snapshot, 0, 0);
+      ctx.putImageData(snapshot, 0, 0); // Restore canvas to show preview
       ctx.strokeStyle = color;
-      if (tool === "rect") {
-        ctx.strokeRect(startPos.x, startPos.y, x - startPos.x, y - startPos.y);
-      } else {
-        const rx = Math.abs(x - startPos.x);
-        const ry = Math.abs(y - startPos.y);
-        ctx.beginPath();
-        ctx.ellipse(startPos.x, startPos.y, rx, ry, 0, 0, 2 * Math.PI);
-        ctx.stroke();
-      }
-    } else {
+      ctx.lineWidth = lineWidth;
+      drawActualShape(ctx, tool, startPos, newPos);
+    } else if (tool === "pencil" || tool === "eraser") {
       ctx.lineTo(x, y);
       ctx.stroke();
-    }
-
-    if (tool === "pencil" || tool === "eraser") {
-      ctx.lineTo(x, y);
-      ctx.stroke();
-
-      // EMIT TO SERVER
       socket.emit("draw", {
         x,
         y,
-        prevX: startPos.x, // We need to track the last point
+        prevX: startPos.x,
         prevY: startPos.y,
         tool,
         color,
         lineWidth,
+        roomId,
       });
-      setStartPos({ x, y });
+      setStartPos(newPos);
     }
   };
 
@@ -158,12 +152,9 @@ const Board = ({ canvasRef, tool, color, lineWidth, socket }) => {
     const y = e.clientY - rect.top;
 
     if (tool === "text") {
-      // If we are already typing, we "bake" the old text first
+      // If we are already typing, bake the old text first
       if (textState.isTyping && textState.text.length > 0) {
-        const ctx = canvasRef.current.getContext("2d", { willReadFrequently: true });
-        ctx.font = `${lineWidth * 5}px Arial`;
-        ctx.fillStyle = color;
-        ctx.fillText(textState.text, textState.x, textState.y);
+        handleTextBake();
       }
 
       // Set typing to true and DON'T bake on blur for now
@@ -179,7 +170,9 @@ const Board = ({ canvasRef, tool, color, lineWidth, socket }) => {
     // DRAWING LOGIC FOR OTHER TOOLS
     setIsDrawing(true);
     setStartPos({ x, y });
-    const ctx = canvasRef.current.getContext("2d", { willReadFrequently: true });
+    const ctx = canvasRef.current.getContext("2d", {
+      willReadFrequently: true,
+    });
     setSnapshot(
       ctx.getImageData(0, 0, canvasRef.current.width, canvasRef.current.height)
     );
@@ -189,13 +182,71 @@ const Board = ({ canvasRef, tool, color, lineWidth, socket }) => {
     ctx.lineWidth = lineWidth;
   };
 
+  const handleMouseUp = () => {
+    if (isDrawing && (tool === "rect" || tool === "ellipse")) {
+      // This emits to OTHERS
+      socket.emit("draw_shape", {
+        startPos,
+        endPos: currentPos,
+        tool,
+        color,
+        lineWidth,
+        roomId,
+      });
+    }
+    setIsDrawing(false);
+  };
+
+  const handleTextBake = () => {
+    if (textState.text.trim() === "") return;
+
+    const ctx = canvasRef.current.getContext("2d");
+    ctx.font = `${lineWidth * 2}px Arial`;
+    ctx.fillStyle = color;
+    ctx.textBaseline = "top";
+    ctx.fillText(textState.text, textState.x, textState.y);
+
+    // EMIT TEXT TO OTHERS
+    socket.emit("draw_text", {
+      text: textState.text,
+      x: textState.x,
+      y: textState.y,
+      color,
+      lineWidth,
+      roomId,
+    });
+
+    setTextState({ isTyping: false, x: 0, y: 0, text: "" });
+  };
+
   return (
     <div className="relative w-full h-full bg-white overflow-hidden">
+      <div className="w-64 bg-gray-900 text-white p-6 shadow-2xl z-50 flex flex-col">
+        <h3 className="text-xl font-bold mb-6 border-b border-gray-700 pb-2">
+          Active Users
+        </h3>
+        <ul className="space-y-3 flex-1 overflow-y-auto">
+          {usersInRoom.map((user, index) => (
+            <li
+              key={index}
+              className="flex items-center gap-2 bg-gray-800 p-2 rounded"
+            >
+              <div className="w-2 h-2 bg-green-500 rounded-full" />
+              <span className="truncate">
+                {user} {user === userName ? "(You)" : ""}
+              </span>
+            </li>
+          ))}
+        </ul>
+        <div className="mt-auto pt-4 text-xs text-gray-500">
+          Room ID: <span className="text-blue-400 font-mono">{roomId}</span>
+        </div>
+      </div>
       <canvas
         ref={canvasRef}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
-        onMouseUp={() => setIsDrawing(false)}
+        onMouseUp={handleMouseUp} // Changed from () => setIsDrawing(false)
         className="block w-full h-full touch-none"
         style={{ cursor: tool === "text" ? "text" : "crosshair" }}
       />
@@ -209,13 +260,7 @@ const Board = ({ canvasRef, tool, color, lineWidth, socket }) => {
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
-              // Manually trigger the bake
-              const ctx = canvasRef.current.getContext("2d");
-              ctx.font = `${lineWidth * 2}px Arial`;
-              ctx.fillStyle = color;
-              ctx.textBaseline = "top";
-              ctx.fillText(textState.text, textState.x, textState.y);
-              setTextState({ isTyping: false, x: 0, y: 0, text: "" });
+              handleTextBake();
             }
           }}
           style={{

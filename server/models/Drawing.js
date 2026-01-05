@@ -1,9 +1,9 @@
-const mongoose = require('mongoose');
+import mongoose from 'mongoose'; // Use import instead of require
 
 const DrawingSchema = new mongoose.Schema({
   roomId: { type: String, required: true },
-  data: { type: String, required: true }, // Hum canvas ka base64 data ya strokes save karenge
+  data: { type: String, required: true }, 
   updatedAt: { type: Date, default: Date.now }
 });
 
-module.exports = mongoose.model('Drawing', DrawingSchema);
+export default mongoose.model('Drawing', DrawingSchema); // Use export default
