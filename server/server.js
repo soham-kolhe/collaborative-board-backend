@@ -35,9 +35,17 @@ const io = new Server(server, {
 socketHandler(io);
 
 // ─── Database & Start ─────────────────────────────────────
-connectDB();
+const startServer = async () => {
+  await connectDB();
+  
+  // Clean up any remaining zombie connections from previous run
+  const { default: ActiveUser } = await import('./models/ActiveUser.js');
+  await ActiveUser.deleteMany({});
+  
+  const PORT = process.env.PORT || 5001;
+  server.listen(PORT, () => {
+    console.log(`✅ Server running on port ${PORT}`);
+  });
+};
 
-const PORT = process.env.PORT || 5001;
-server.listen(PORT, () => {
-  console.log(`✅ Server running on port ${PORT}`);
-});
+startServer();

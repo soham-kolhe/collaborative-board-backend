@@ -1,9 +1,8 @@
 import axios from 'axios';
 import { getStoredToken } from './auth';
 import type { Board, BoardListResponse } from '../types';
-
-const BASE_URL = 'http://localhost:5001/api/boards';
-
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+const BASE_URL = `${API_URL}/api/boards`;
 function authHeaders() {
   const token = getStoredToken();
   return token ? { Authorization: `Bearer ${token}` } : {};

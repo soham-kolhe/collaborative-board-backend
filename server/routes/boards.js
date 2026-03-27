@@ -3,6 +3,7 @@ import { nanoid } from 'nanoid';
 import Board from '../models/Board.js';
 import User from '../models/User.js';
 import { requireAuth } from '../middleware/auth.js';
+import { body, validationResult } from 'express-validator';
 
 const router = express.Router();
 
@@ -30,12 +31,24 @@ router.get('/', async (req, res) => {
 });
 
 // POST /api/boards — create a new board
-router.post('/', async (req, res) => {
-  try {
-    const { name } = req.body;
-    if (!name || !name.trim()) {
-      return res.status(400).json({ message: 'Board name is required' });
-    }
+router.post(
+  '/',
+  [
+    body('name')
+      .trim()
+      .notEmpty()
+      .withMessage('Board name is required')
+      .isLength({ max: 80 })
+      .withMessage('Board name cannot exceed 80 characters'),
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ message: errors.array()[0].msg });
+      }
+
+      const { name } = req.body;
 
     const boardId = nanoid(10); // short unique ID e.g. "Vg3kLm0pQr"
     const board = await Board.create({

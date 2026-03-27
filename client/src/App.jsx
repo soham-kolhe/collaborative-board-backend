@@ -5,7 +5,8 @@ import Board from "./components/Board";
 import { io } from "socket.io-client";
 import { useUndoRedo } from "./hooks/useUndoRedo";
 
-const socket = io("http://localhost:5001");
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+const socket = io(API_URL);
 
 function App() {
   const [user, setUser] = useState(null);
@@ -70,13 +71,24 @@ function App() {
 
   const handleDownload = () => {
     const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    // Create a temporary canvas to apply a white background
+    const tempCanvas = document.createElement("canvas");
+    tempCanvas.width = canvas.width;
+    tempCanvas.height = canvas.height;
+    const ctx = tempCanvas.getContext("2d");
+    
+    // Fill with white background
+    ctx.fillStyle = "white";
+    ctx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+    ctx.drawImage(canvas, 0, 0);
+
     const link = document.createElement("a");
     link.download = "whiteboard.png";
-    link.href = canvas.toDataURL("image/png");
+    link.href = tempCanvas.toDataURL("image/png");
     link.click();
-  };
-
-  
+  }; 
 
   return (
     <div className="relative w-screen h-screen bg-white overflow-hidden">

@@ -1,24 +1,23 @@
 import jwt from 'jsonwebtoken';
 import Board from '../models/Board.js';
 import User from '../models/User.js';
+import ActiveUser from '../models/ActiveUser.js';
+import Drawing from '../models/Drawing.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'wb_super_secret_key_change_in_prod';
 
-const users = {};      // socketId -> { userName, userId, roomId, role, canDraw }
-const roomAdmins = {}; // roomId -> socketId of current admin
-
-const getRoomUsers = (roomId) =>
-  Object.entries(users)
-    .filter(([, u]) => u.roomId === roomId)
-    .map(([socketId, u]) => ({
-      socketId,
-      name: u.userName,
-      role: u.role,
-      canDraw: u.canDraw,
-    }));
+const getRoomUsers = async (roomId) => {
+  const usersList = await ActiveUser.find({ roomId });
+  return usersList.map((u) => ({
+    socketId: u.socketId,
+    name: u.userName,
+    role: u.role,
+    canDraw: u.canDraw,
+  }));
+};
 
 export const socketHandler = (io) => {
-  // ─── JWT handshake auth (optional – gracefully skips if no token) ───
+  // ─── JWT handshake auth ───
   io.use((socket, next) => {
     const token = socket.handshake.auth?.token;
     if (token) {
@@ -27,7 +26,7 @@ export const socketHandler = (io) => {
         socket.userId = decoded.id;
         socket.jwtUserName = decoded.userName;
       } catch {
-        // token invalid – allow connection, identity comes from join-room payload
+        // token invalid – allow connection, identity from join-room
       }
     }
     next();
@@ -40,20 +39,18 @@ export const socketHandler = (io) => {
 
       if (socket.userId) {
         // Kick ghost socket for the authenticated user reconnecting
-        const oldSocketEntry = Object.entries(users).find(
-          ([, u]) => u.roomId === roomId && u.userId === socket.userId
-        );
-        if (oldSocketEntry) {
-          const oldSocketId = oldSocketEntry[0];
-          io.to(oldSocketId).emit('error', 'You joined from another tab or reconnected.');
-          io.sockets.sockets.get(oldSocketId)?.leave(roomId);
-          handleLeave(oldSocketId, roomId);
+        const oldSessions = await ActiveUser.find({ roomId, userId: socket.userId });
+        for (const old of oldSessions) {
+          io.to(old.socketId).emit('error', 'You joined from another tab or reconnected.');
+          io.sockets.sockets.get(old.socketId)?.leave(roomId);
+          await handleLeave(old.socketId, roomId);
         }
       } else {
         // Prevent duplicate names for guests
-        const isDuplicate = Object.values(users).some(
-          (u) => u.roomId === roomId && u.userName.toLowerCase() === displayName.toLowerCase(),
-        );
+        const isDuplicate = await ActiveUser.findOne({
+          roomId,
+          userName: { $regex: new RegExp(`^${displayName}$`, 'i') },
+        });
         if (isDuplicate) {
           socket.emit('error', 'Username already taken in this room.');
           return;
@@ -69,15 +66,17 @@ export const socketHandler = (io) => {
 
       // 2. Check Ownership & Admin presence
       const isOwner = socket.userId && socket.userId === board.ownerId.toString();
-      if (!isOwner && !roomAdmins[roomId]) {
+      const adminSession = await ActiveUser.findOne({ roomId, role: 'Admin' });
+      
+      if (!isOwner && !adminSession) {
         socket.emit('error', 'The admin has not joined the board yet.');
         return;
       }
 
-      // 3. Actually join the room
+      // 3. Join the room
       socket.join(roomId);
 
-      // 4. Track this board in the user's recent activity if they aren't the owner
+      // 4. Track this board in the user's recent activity if not the owner
       if (socket.userId && !isOwner) {
         try {
           await User.findByIdAndUpdate(socket.userId, { $addToSet: { joinedBoards: roomId } });
@@ -86,42 +85,71 @@ export const socketHandler = (io) => {
         }
       }
 
-      // 5. Load persisted tldraw state for this board
-      if (board.tldrawState) {
+      // 5. Load persisted canvas/tldraw state
+      // Both legacy snapshot and new tldraw state are supported
+      const drawing = await Drawing.findOne({ roomId });
+      if (drawing && drawing.snapshot) {
+        socket.emit('load-canvas', drawing.snapshot);
+      } else if (board.tldrawState) {
         socket.emit('load-tldraw-state', board.tldrawState);
       }
 
-      // 6. Assign Admin role to the owner
-      let role = 'User';
-      if (isOwner) {
-        roomAdmins[roomId] = socket.id;
-        role = 'Admin';
-      }
+      // 6. Assign role
+      const role = isOwner ? 'Admin' : 'User';
 
-      users[socket.id] = {
-        userName: displayName,
-        userId: socket.userId || null,
+      await ActiveUser.create({
+        socketId: socket.id,
         roomId,
+        userId: socket.userId || null,
+        userName: displayName,
         role,
         canDraw: true,
-      };
+      });
 
       socket.emit('joined', { role, userName: displayName, roomId });
-      io.to(roomId).emit('user_list', getRoomUsers(roomId));
+      io.to(roomId).emit('user_list', await getRoomUsers(roomId));
     });
 
-    // ─── tldraw Real-time Sync ──────────────────────────────────────
+    // ─── Canvas Real-time Sync ──────────────────────────────────────
+    socket.on('draw-action', ({ roomId, action }) => {
+      socket.to(roomId).emit('draw-action', { action, fromSocketId: socket.id });
+    });
+
+    socket.on('draw_text', (data) => {
+      const { roomId } = data;
+      socket.to(roomId).emit('draw_text', { ...data, fromSocketId: socket.id });
+    });
+
+    // ─── Cursors Real-time Sync ─────────────────────────────────────
+    socket.on('cursor-move', ({ roomId, x, y }) => {
+      socket.to(roomId).emit('cursor-move', { socketId: socket.id, x, y });
+    });
+
+    // ─── tldraw Real-time Sync (Legacy Support) ──────────────────────
     socket.on('tldraw-changes', ({ roomId, updates }) => {
       socket.to(roomId).emit('tldraw-changes', { updates, fromSocketId: socket.id });
     });
 
-    // ─── Save tldraw State (persisted) ─────────────────────────────
+    // ─── Save Canvas Snapshot (MongoDB Persistence) ─────────────────
+    socket.on('save-snapshot', async ({ roomId, snapshot }) => {
+      try {
+        await Drawing.findOneAndUpdate(
+          { roomId },
+          { snapshot, updatedAt: Date.now() },
+          { upsert: true, new: true }
+        );
+      } catch (err) {
+        console.error('Canvas snapshot save failed:', err);
+      }
+    });
+
+    // ─── Save tldraw State (Legacy Persistence) ─────────────────────
     socket.on('save-tldraw-state', async ({ roomId, state }) => {
       try {
         await Board.findOneAndUpdate(
           { boardId: roomId },
           { tldrawState: state },
-          { upsert: false }, // only update, board must be created via REST
+          { upsert: false }
         );
       } catch (err) {
         console.error('tldraw state save failed:', err);
@@ -129,53 +157,59 @@ export const socketHandler = (io) => {
     });
 
     // ─── Permission Toggle (Admin only) ────────────────────────────
-    socket.on('toggle-permission', ({ targetSocketId, roomId }) => {
-      const admin = users[socket.id];
+    socket.on('toggle-permission', async ({ targetSocketId, roomId }) => {
+      const admin = await ActiveUser.findOne({ socketId: socket.id });
       if (!admin || admin.role !== 'Admin') return;
 
-      const targetUser = users[targetSocketId];
-      if (!targetUser || targetUser.roomId !== roomId) return;
+      const targetUser = await ActiveUser.findOne({ socketId: targetSocketId, roomId });
+      if (!targetUser) return;
 
       targetUser.canDraw = !targetUser.canDraw;
+      await targetUser.save();
+
       io.to(targetSocketId).emit('permission-changed', targetUser.canDraw);
-      io.to(roomId).emit('user_list', getRoomUsers(roomId));
+      io.to(roomId).emit('user_list', await getRoomUsers(roomId));
     });
 
     // ─── Clear Canvas (Admin only) ──────────────────────────────────
     socket.on('clear_canvas', async ({ roomId }) => {
-      const user = users[socket.id];
+      const user = await ActiveUser.findOne({ socketId: socket.id });
       if (!user || user.role !== 'Admin') return;
 
       try {
+        await Drawing.findOneAndUpdate({ roomId }, { snapshot: null });
         await Board.findOneAndUpdate({ boardId: roomId }, { tldrawState: null });
         io.to(roomId).emit('clear_canvas');
       } catch (err) { console.error('Clear canvas error:', err); }
     });
 
     // ─── Disconnect or Leave Room ──────────────────────────────────
-    const handleLeave = (socketId, explicitRoomId = null) => {
-      const user = users[socketId];
+    const handleLeave = async (socketId, explicitRoomId = null) => {
+      const user = await ActiveUser.findOne({ socketId });
       if (!user) return;
 
       const roomId = explicitRoomId || user.roomId;
       const role = user.role;
-      delete users[socketId];
+      
+      await ActiveUser.deleteOne({ socketId });
 
-      if (role === 'Admin' && roomAdmins[roomId] === socketId) {
-        delete roomAdmins[roomId];
-        io.to(roomId).emit('admin-left');
+      if (role === 'Admin') {
+        const stillAdmin = await ActiveUser.findOne({ roomId, role: 'Admin' });
+        if (!stillAdmin) {
+          io.to(roomId).emit('admin-left');
+        }
       }
 
-      io.to(roomId).emit('user_list', getRoomUsers(roomId));
+      io.to(roomId).emit('user_list', await getRoomUsers(roomId));
     };
 
-    socket.on('leave-room', ({ roomId }) => {
+    socket.on('leave-room', async ({ roomId }) => {
       socket.leave(roomId);
-      handleLeave(socket.id, roomId);
+      await handleLeave(socket.id, roomId);
     });
 
-    socket.on('disconnect', () => {
-      handleLeave(socket.id);
+    socket.on('disconnect', async () => {
+      await handleLeave(socket.id);
     });
   });
 };
