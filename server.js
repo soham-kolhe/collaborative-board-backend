@@ -14,9 +14,9 @@ const app = express();
 
 // ─── CORS ───────────────────────────────────────────
 app.use(cors({
-  origin: "http://localhost:5173", // Apne frontend ka URL
+  origin: `${process.env.FRONTEND_URL}`, // Apne frontend ka URL
   methods: ["GET", "POST", "PUT", "DELETE"],
-  allowedHeaders: ["Content-Type", "Authorization"], 
+  allowedHeaders: ["Content-Type", "Authorization"],
   credentials: true
 }));
 
@@ -44,11 +44,11 @@ socketHandler(io);
 // ─── Database & Start ─────────────────────────────────────
 const startServer = async () => {
   await connectDB();
-  
+
   // Clean up any remaining zombie connections from previous run
   const { default: ActiveUser } = await import('./models/ActiveUser.js');
   await ActiveUser.deleteMany({});
-  
+
   const PORT = process.env.PORT || 5001;
   server.listen(PORT, () => {
     console.log(`✅ Server running on port ${PORT}`);
