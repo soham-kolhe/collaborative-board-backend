@@ -45,7 +45,7 @@ sequenceDiagram
 
 ## 📁 Key Directories
 - `config/`: Database connection and other configuration setups.
-- `models/`: Mongoose schemas for User, Board, Drawing, and ActiveUser.
+- `models/`: Mongoose schemas for User, Board, and ActiveUser.
 - `routes/`: Express API endpoints (/api/auth, /api/boards).
 - `sockets/`: Socket.io event handlers and real-time logic.
 - `middleware/`: Auth verification and rate limiters.
@@ -71,7 +71,7 @@ sequenceDiagram
 | `join-room` | Listen | `{ userName, roomId }` | Initialize room join, auth check, and state recovery |
 | `draw-action` | Listen/Broadcast | `{ roomId, action }` | Sync real-time drawing actions |
 | `cursor-move` | Listen/Broadcast | `{ roomId, x, y }` | Real-time cursor tracking for all participants | 
-| `save-snapshot` | Listen | `{ roomId, snapshot }` | Persist canvas state to MongoDB |
+
 | `toggle-permission` | Listen | `{ targetSocketId, roomId }` | Admin-only toggle for user drawing rights |
 | `user_list` | Emit | `Array<User>` | Update list of online users in the room |
 

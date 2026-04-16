@@ -2,8 +2,6 @@ import jwt from 'jsonwebtoken';
 import Board from '../models/Board.js';
 import User from '../models/User.js';
 import ActiveUser from '../models/ActiveUser.js';
-import Drawing from '../models/Drawing.js';
-
 const JWT_SECRET = process.env.JWT_SECRET || 'wb_super_secret_key_change_in_prod';
 
 const getRoomUsers = async (roomId) => {
@@ -100,11 +98,8 @@ export const socketHandler = (io) => {
           );
         }
 
-        // 7. Load State (Canvas or Tldraw)
-        const drawing = await Drawing.findOne({ roomId });
-        if (drawing && drawing.snapshot) {
-          socket.emit('load-canvas', drawing.snapshot);
-        } else if (board.tldrawState) {
+        // 7. Load State (Tldraw)
+        if (board.tldrawState) {
           socket.emit('load-tldraw-state', board.tldrawState);
         }
 
@@ -140,18 +135,7 @@ export const socketHandler = (io) => {
       socket.to(roomId).emit('tldraw-changes', { updates, fromSocketId: socket.id });
     });
 
-    // ─── Save Canvas Snapshot (MongoDB Persistence) ─────────────────
-    socket.on('save-snapshot', async ({ roomId, snapshot }) => {
-      try {
-        await Drawing.findOneAndUpdate(
-          { roomId },
-          { snapshot, updatedAt: Date.now() },
-          { upsert: true, new: true }
-        );
-      } catch (err) {
-        console.error('Canvas snapshot save failed:', err);
-      }
-    });
+
 
     // ─── Save tldraw State (Legacy Persistence) ─────────────────────
     socket.on('save-tldraw-state', async ({ roomId, state }) => {
@@ -187,7 +171,6 @@ export const socketHandler = (io) => {
       if (!user || user.role !== 'Admin') return;
 
       try {
-        await Drawing.findOneAndUpdate({ roomId }, { snapshot: null });
         await Board.findOneAndUpdate({ boardId: roomId }, { tldrawState: null });
         io.to(roomId).emit('clear_canvas');
       } catch (err) { console.error('Clear canvas error:', err); }

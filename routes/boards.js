@@ -21,9 +21,21 @@ router.get('/', async (req, res) => {
         { ownerId: req.user.id },
         { boardId: { $in: joinedIds } }
       ]
-    }).sort({ createdAt: -1 });
+    })
+    .populate('ownerId', 'userName')
+    .sort({ createdAt: -1 });
 
-    return res.json({ boards });
+    const formattedBoards = boards.map(b => ({
+      _id: b._id,
+      boardId: b.boardId,
+      name: b.name,
+      ownerId: b.ownerId?._id || b.ownerId, // keep it as ID string for frontend comparison
+      adminName: b.ownerId?.userName || 'Unknown Admin',
+      createdAt: b.createdAt,
+      updatedAt: b.updatedAt
+    }));
+
+    return res.json({ boards: formattedBoards });
   } catch (err) {
     console.error('Fetch boards error:', err);
     return res.status(500).json({ message: 'Server error' });
