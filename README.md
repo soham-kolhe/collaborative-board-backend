@@ -1,4 +1,4 @@
-# Collaborative Board - Backend
+# CollabBoard - Backend
 
 This repository contains the backend service for the Collaborative Board application. It provides REST APIs for authentication and board management, and a robust WebSocket server for real-time canvas synchronization.
 
@@ -90,7 +90,7 @@ sequenceDiagram
 > **CORS**: Ensure `FRONTEND_URL` matches your React app's URL exactly.<br>
 > **Database Cleanup**: On server start, the system automatically clears the `ActiveUser` collection to prevent zombie connection errors.<br>
 > The interactive **React + TypeScript frontend** can be found here:<br>
-> 👉 [Frontend](https://github.com/soham-kolhe/collaborative-board-frontend)
+> 👉 [Frontend](https://github.com/soham-kolhe/CollabBoard-frontend)
 
 ## ⚙️ Setup & Installation
 
