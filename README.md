@@ -92,8 +92,11 @@ Node.js • Express • Socket.io • MongoDB • JWT • bcryptjs
 Passwords encrypted with bcryptjs • JWT authentication for REST & WebSocket • Rate limiting on API endpoints • CORS validation
 
 ## 🔗 Quick Links
-[Frontend](https://github.com/soham-kolhe/CollabBoard-frontend) | [Main Project](https://github.com/soham-kolhe/CollabBoard)
+
+- 🖥️ [Frontend](https://github.com/soham-kolhe/CollabBoard-frontend)
+- 📦 [Main Project](https://github.com/soham-kolhe/CollabBoard)
 
 ---
 
-Created by: Soham Kolhe
+Created by [Soham Kolhe](https://github.com/soham-kolhe)
+
